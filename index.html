@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Book Library</title>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f1f5f9;
+    color: #1e293b;
+}
+
+header {
+    background: linear-gradient(135deg, #172554, #2563eb);
+    color: white;
+    padding: 30px 20px;
+    text-align: center;
+}
+
+header h1 {
+    margin: 0 0 10px;
+}
+
+.container {
+    max-width: 1100px;
+    margin: 25px auto;
+    padding: 20px;
+}
+
+.controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+input, select, button {
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    font-size: 15px;
+}
+
+input {
+    flex: 1;
+    min-width: 180px;
+}
+
+button {
+    background: #2563eb;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+.secondary {
+    background: #475569;
+}
+
+.secondary:hover {
+    background: #334155;
+}
+
+.stats {
+    margin: 15px 0;
+    color: #475569;
+}
+
+.book-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+}
+
+.book {
+    background: white;
+    padding: 18px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px #0000000d;
+    transition: transform 0.2s;
+    overflow-wrap: anywhere;
+}
+
+.book:hover {
+    transform: translateY(-5px);
+}
+
+.cover {
+    width: 100%;
+    height: 190px;
+    object-fit: contain;
+    background: #e2e8f0;
+    border-radius: 8px;
+}
+
+.book h3 {
+    color: #1d4ed8;
+}
+
+.author {
+    color: #64748b;
+    min-height: 36px;
+}
+
+.favorite {
+    background: #e11d48;
+    margin-top: 8px;
+    width: 100%;
+}
+
+.favorite:hover {
+    background: #be123c;
+}
+
+.book-link {
+    display: inline-block;
+    margin-top: 12px;
+    color: #2563eb;
+}
+
+#message {
+    text-align: center;
+    margin: 20px 0;
+}
+
+#loadBooks:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+@media (max-width: 500px) {
+    .container {
+        padding: 12px;
+    }
+
+    .controls {
+        flex-direction: column;
+    }
+
+    input, select, button {
+        width: 100%;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>📚 My Book Library</h1>
+    <p>Discover your next favorite book</p>
+</header>
+
+<main class="container">
+
+    <div class="controls">
+        <input type="search" id="search"
+               placeholder="Search by title or author...">
+
+        <select id="category">
+            <option value="programming">Programming</option>
+            <option value="science">Science</option>
+            <option value="fiction">Fiction</option>
+            <option value="history">History</option>
+            <option value="fantasy">Fantasy</option>
+        </select>
+
+        <button id="loadBooks">Load Books</button>
+        <button id="showFavorites" class="secondary">
+            ❤️ Favorites
+        </button>
+    </div>
+
+    <div class="stats" id="stats">Choose a category and load books.</div>
+    <p id="message" role="status"></p>
+    <div class="book-grid" id="bookList"></div>
+
+</main>
+
+<script>
+$(document).ready(function () {
+
+    let books = [];
+    let favorites = new Set();
+    let favoritesOnly = false;
+    let requestNumber = 0;
+
+    function loadBooks() {
+        const currentRequest = ++requestNumber;
+        const category = $("#category").val();
+
+        $("#message").text("⏳ Loading books...");
+        $("#bookList").empty();
+        $("#stats").text("");
+        $("#loadBooks").prop("disabled", true);
+
+        $.ajax({
+            url: "https://openlibrary.org/subjects/"
+                + encodeURIComponent(category) + ".json",
+            method: "GET",
+            data: { limit: 30 },
+            dataType: "json",
+            timeout: 15000,
+
+            success: function (response) {
+                if (currentRequest !== requestNumber) return;
+
+                books = response.works || [];
+                favoritesOnly = false;
+                $("#showFavorites").text("❤️ Favorites");
+                $("#message").text("");
+
+                displayBooks();
+            },
+
+            error: function () {
+                if (currentRequest !== requestNumber) return;
+
+                $("#message").text(
+                    "Unable to load books. Check your internet connection and try again."
+                );
+                $("#stats").text("");
+            },
+
+            complete: function () {
+                if (currentRequest === requestNumber) {
+                    $("#loadBooks").prop("disabled", false);
+                }
+            }
+        });
+    }
+
+    function displayBooks() {
+        const query = $("#search").val().trim().toLowerCase();
+
+        let filtered = books.filter(function (book) {
+            const title = (book.title || "").toLowerCase();
+            const authors = (book.authors || [])
+                .map(a => a.name).join(" ").toLowerCase();
+
+            const matchesSearch =
+                title.includes(query) || authors.includes(query);
+
+            const matchesFavorite =
+                !favoritesOnly || favorites.has(book.key);
+
+            return matchesSearch && matchesFavorite;
+        });
+
+        $("#bookList").empty();
+
+        $("#stats").text(
+            "Showing " + filtered.length + " of " +
+            books.length + " books" +
+            (favoritesOnly ? " · Favorites" : "")
+        );
+
+        if (filtered.length === 0) {
+            $("#message").text(
+                favoritesOnly
+                    ? "No favorite books match your search."
+                    : "No books found. Try another search."
+            );
+            return;
+        }
+
+        $("#message").text("");
+
+        filtered.forEach(function (book) {
+            const authors = (book.authors || [])
+                .map(a => a.name).join(", ") || "Unknown author";
+
+            const coverUrl = book.cover_id
+                ? "https://covers.openlibrary.org/b/id/"
+                    + encodeURIComponent(book.cover_id) + "-M.jpg"
+                : "";
+
+            const card = $("<article>").addClass("book");
+
+            if (coverUrl) {
+                $("<img>")
+                    .addClass("cover")
+                    .attr("src", coverUrl)
+                    .attr("alt", "Cover of " + book.title)
+                    .on("error", function () {
+                        $(this).hide();
+                    })
+                    .appendTo(card);
+            }
+
+            $("<h3>")
+                .text(book.title || "Untitled")
+                .appendTo(card);
+
+            $("<p>")
+                .addClass("author")
+                .text("By: " + authors)
+                .appendTo(card);
+
+            $("<p>")
+                .text("First published: " +
+                    (book.first_publish_year || "Unknown"))
+                .appendTo(card);
+
+            $("<button>")
+                .addClass("favorite")
+                .text(favorites.has(book.key)
+                    ? "💔 Remove Favorite"
+                    : "❤️ Add Favorite")
+                .on("click", function () {
+                    if (favorites.has(book.key)) {
+                        favorites.delete(book.key);
+                    } else {
+                        favorites.add(book.key);
+                    }
+
+                    displayBooks();
+                })
+                .appendTo(card);
+
+            $("<a>")
+                .addClass("book-link")
+                .attr("href", "https://openlibrary.org" + book.key)
+                .attr("target", "_blank")
+                .attr("rel", "noopener noreferrer")
+                .text("View book details ↗")
+                .appendTo(card);
+
+            $("#bookList").append(card);
+        });
+    }
+
+    $("#loadBooks").on("click", loadBooks);
+
+    $("#category").on("change", function () {
+        loadBooks();
+    });
+
+    $("#search").on("input", function () {
+        if (books.length) displayBooks();
+    });
+
+    $("#showFavorites").on("click", function () {
+        favoritesOnly = !favoritesOnly;
+
+        $(this).text(
+            favoritesOnly ? "📚 All Books" : "❤️ Favorites"
+        );
+
+        displayBooks();
+    });
+
+    loadBooks();
+});
+</script>
+
+</body>
+</html>
